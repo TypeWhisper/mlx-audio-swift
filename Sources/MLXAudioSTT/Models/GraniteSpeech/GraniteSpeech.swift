@@ -506,7 +506,7 @@ class GraniteSpeechLMAttention: Module {
     @ModuleInfo(key: "v_proj") var wv: Linear
     @ModuleInfo(key: "o_proj") var wo: Linear
 
-    let rope: RoPE
+    let rope: GraniteSpeechRotaryEmbedding
 
     init(_ config: GraniteSpeechTextConfig) {
         let dim = config.hiddenSize
@@ -520,7 +520,7 @@ class GraniteSpeechLMAttention: Module {
         self._wv.wrappedValue = Linear(dim, numKVHeads * headDim, bias: config.attentionBias)
         self._wo.wrappedValue = Linear(numHeads * headDim, dim, bias: config.attentionBias)
 
-        self.rope = RoPE(dimensions: headDim, traditional: false, base: config.ropeTheta)
+        self.rope = GraniteSpeechRotaryEmbedding(dimensions: headDim, config: config)
     }
 
     func callAsFunction(
@@ -809,6 +809,8 @@ public class GraniteSpeechModel: Module {
     }
 
     func buildInputEmbeds(_ inputIds: MLXArray, audioFeatures: MLXArray) -> MLXArray {
+        let audioFeatures = audioFeatures.asType(languageModel.embedTokens.weight.dtype.isFloatingPoint
+            ? languageModel.embedTokens.weight.dtype : audioFeatures.dtype)
         let isAudio = inputIds .== Int32(audioTokenId)
         let llmIds = MLX.where(isAudio, MLXArray(Int32(0)), inputIds)
 
@@ -1071,6 +1073,7 @@ public class GraniteSpeechModel: Module {
         let modelDir = try await ModelUtils.resolveOrDownloadModel(
             repoID: repoID,
             requiredExtension: ".safetensors",
+            additionalMatchingPatterns: ["*.jinja"],
             cache: cache
         )
 
@@ -1084,12 +1087,12 @@ public class GraniteSpeechModel: Module {
 
         let model = GraniteSpeechModel(config)
 
-        model.tokenizer = try await AutoTokenizer.from(modelFolder: modelDir)
+        model.tokenizer = try await loadGraniteSpeechTokenizer(from: modelDir)
 
         var weights: [String: MLXArray] = [:]
         let fileManager = FileManager.default
         let files = try fileManager.contentsOfDirectory(at: modelDir, includingPropertiesForKeys: nil)
-        let safetensorFiles = files.filter { $0.pathExtension == "safetensors" }
+        let safetensorFiles = files.filter { $0.pathExtension == "safetensors" && $0.lastPathComponent != "out_llm.safetensors" }
 
         for file in safetensorFiles {
             let fileWeights = try MLX.loadArrays(url: file)
