@@ -62,3 +62,24 @@ struct GraniteSpeech5Tests {
             abs(frequencies[-1].item(Float.self) / pow(Float(10000), Float(126) / 128) - 4) < 1e-5)
     }
 }
+
+@Suite(.serialized)
+struct GraniteSpeech5CheckpointTests {
+    /// Point GRANITE_SPEECH5_MODEL_DIR at a local ibm-granite/granite-speech-5.0-2b snapshot.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["GRANITE_SPEECH5_MODEL_DIR"] != nil))
+    func localCheckpointTranscribes() async throws {
+        let path = try #require(ProcessInfo.processInfo.environment["GRANITE_SPEECH5_MODEL_DIR"])
+        let model = try await GraniteSpeechModel.fromModelDirectory(URL(fileURLWithPath: path))
+        let audioURL = try #require(
+            Bundle.module.url(forResource: "intention", withExtension: "wav", subdirectory: "media"))
+        let (_, audio) = try loadAudioArray(from: audioURL, sampleRate: 16000)
+        let output = model.generate(
+            audio: audio, maxTokens: 32, temperature: 0,
+            prompt: "transcribe the speech with proper punctuation and capitalization.")
+        print("granite-speech-5.0-2b: \(output.text)")
+        let words = output.text.lowercased().components(
+            separatedBy: CharacterSet.alphanumerics.inverted
+        ).filter { !$0.isEmpty }
+        #expect(words == ["intention"])
+    }
+}
