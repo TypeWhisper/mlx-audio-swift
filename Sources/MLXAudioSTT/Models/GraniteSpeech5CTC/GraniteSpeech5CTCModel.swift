@@ -3,6 +3,7 @@ import HuggingFace
 import MLX
 import MLXNN
 import MLXAudioCore
+import MLXLMCommon
 
 /// Encoder-only English ASR. No language model, translation, or trained live-input protocol.
 public final class GraniteSpeech5CTCModel: Module, STTGenerationModel {
